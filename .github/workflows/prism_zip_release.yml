@@ -119,7 +119,10 @@ jobs:
           
           # Create filename (keep spaces in the name)
           ZIP_FILENAME="${MODPACK_NAME}.zip"
-          echo "zip_filename=${ZIP_FILENAME}" >> $GITHUB_OUTPUT
+          # Use proper quoting and escaping for GitHub Actions output
+          echo "zip_filename<<EOF" >> $GITHUB_OUTPUT
+          echo "${ZIP_FILENAME}" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           echo "Will create zip file: ${ZIP_FILENAME}"
         shell: bash
 
