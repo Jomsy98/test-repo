@@ -60,15 +60,8 @@
 
         // Set download link to the repository latest release asset if repo info is present
         const dl = document.getElementById('downloadBtn');
-        if(dl){
-          if(user !== '%USER%' && repo !== '%REPO%'){
-            dl.href = `https://github.com/${user}/${repo}/releases/latest/download/prism.zip`;
-          } else {
-            // fallback to local prism.zip
-            dl.href = './prism.zip';
-          }
-        }
-
+        dl.href = `https://github.com/${user}/${repo}/releases/latest/download/prism.zip`;
+        
         // Load CHANGELOG.md from root
         async function loadChangelog(){
           const content = document.getElementById('changelogContent');
