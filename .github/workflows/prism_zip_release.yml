@@ -173,11 +173,13 @@ jobs:
           VERSION="${{ steps.get_version.outputs.version }}"
           ZIP_FILE="${{ steps.zip_name.outputs.zip_filename }}"
           
-          # Create release and upload the zip file
+          # Create release without uploading files
           gh release create "$VERSION" \
-            "$ZIP_FILE" \
             --title "Release $VERSION" \
             --notes "Release $VERSION"
+          
+          # Upload the zip file separately with explicit filename
+          gh release upload "$VERSION" "$ZIP_FILE" --clobber
           
           echo "Created release $VERSION with asset: $ZIP_FILE"
         env:
