@@ -12,6 +12,7 @@ on:
       - 'packwiz/pack.toml'
       - 'CHANGELOG.md'
       - '.env'
+      - '.github/workflows/static_webpage.yml'
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -54,6 +55,13 @@ jobs:
             echo "No .env file found, using default values"
           fi
           
+          # Determine zip filename (for download link)
+          if [ -n "$MODPACK_NAME" ] && [ "$MODPACK_NAME" != "" ]; then
+            ZIP_FILENAME="${MODPACK_NAME}.zip"
+          else
+            ZIP_FILENAME="Unnamed_Modpack.zip"
+          fi
+          
           # Extract repository owner and name from GITHUB_REPOSITORY
           REPO_OWNER="${GITHUB_REPOSITORY%/*}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
@@ -63,12 +71,14 @@ jobs:
           sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" index.html
           sed -i "s/%USER%/${REPO_OWNER}/g" index.html
           sed -i "s/%REPO%/${REPO_NAME}/g" index.html
+          sed -i "s/%ZIP_FILENAME%/${ZIP_FILENAME}/g" index.html
           
           echo "Replaced placeholders:"
           echo "  MODPACK_NAME=${MODPACK_NAME}"
           echo "  MODPACK_DESCRIPTION=${MODPACK_DESCRIPTION}"
           echo "  REPO_OWNER=${REPO_OWNER}"
           echo "  REPO_NAME=${REPO_NAME}"
+          echo "  ZIP_FILENAME=${ZIP_FILENAME}"
         shell: bash
       
       - name: Setup Pages
