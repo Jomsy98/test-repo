@@ -1,0 +1,151 @@
+name: Build and Release Prism Zip
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - 'prism/**'
+      - 'server-icon.png'
+      - '.env'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'If true, do not push tags or create/delete releases (testing)'
+        required: false
+        default: 'true'
+
+# Set permissions required for creating releases and pushing tags
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Replace placeholders in prism/instance.cfg
+        run: |
+          # Set default values
+          MODPACK_NAME="Modpack Template"
+          MODPACK_DESCRIPTION="This is a modpack template for PackwizBuilder!"
+          
+          # Check if .env file exists and source it
+          if [ -f .env ]; then
+            echo "Found .env file, loading variables..."
+            # Export variables from .env safely
+            set -a; source .env; set +a
+          else
+            echo "No .env file found, using default values"
+          fi
+          
+          # Replace placeholders in prism/instance.cfg
+          sed -i "s/\[Modpack Name\]/${MODPACK_NAME}/g" prism/instance.cfg
+          sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" prism/instance.cfg
+          
+          echo "Replaced placeholders in prism/instance.cfg:"
+          echo "  MODPACK_NAME=${MODPACK_NAME}"
+          echo "  MODPACK_DESCRIPTION=${MODPACK_DESCRIPTION}"
+        shell: bash
+
+      - name: Determine dry-run mode
+        id: determine_dry
+        run: |
+          # If manually triggered, allow the workflow input to control dry run. Otherwise, treat pushes to 'develop' as dry runs.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DRY_IN="${{ github.event.inputs.dry_run }}"
+            if [ -z "$DRY_IN" ]; then DRY_IN='false'; fi
+            DRY_RUN="$DRY_IN"
+          else
+            if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+              DRY_RUN='true'
+            else
+              DRY_RUN='false'
+            fi
+          fi
+          echo "DRY_RUN=$DRY_RUN" >> $GITHUB_ENV
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+
+      - name: Download packwiz installer bootstrap
+        run: |
+          mkdir -p prism/minecraft
+          curl -L -o prism/minecraft/packwiz-installer-bootstrap.jar https://github.com/packwiz/packwiz-installer-bootstrap/releases/latest/download/packwiz-installer-bootstrap.jar
+
+      - name: Copy logo into prism as modpack.png
+        run: |
+          if [ -f ./server-icon.png ]; then
+            cp ./server-icon.png ./prism/modpack.png
+            echo "Copied server-icon.png -> prism/modpack.png"
+          else
+            echo "server-icon.png not found in repo root; skipping copy"
+          fi
+
+      - name: Get version from pack.toml
+        id: get_version
+        run: |
+          VERSION=$(grep '^version =' packwiz/pack.toml | head -n1 | cut -d'=' -f2 | tr -d ' "')
+          if [ -z "$VERSION" ]; then VERSION="0.0.0"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Zip prism directory
+        run: |
+          zip -r prism.zip prism
+
+      - name: Upload prism.zip artifact (for dry-run inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: prism-zip
+          path: prism.zip
+
+      - name: Install gh CLI (if needed)
+        run: |
+          if ! command -v gh >/dev/null 2>&1; then
+            curl -fsSL https://cli.github.com/install.sh | sudo bash
+          else
+            echo "gh already installed"
+          fi
+
+      - name: Create or update tag for version
+        run: |
+          git fetch --tags
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          VERSION=${{ steps.get_version.outputs.version }}
+          echo "Creating/updating tag $VERSION"
+          git tag -f "$VERSION"
+          if [ "$DRY_RUN" != 'true' ]; then
+            git push -f origin "refs/tags/$VERSION"
+          else
+            echo "Dry run enabled; skipping git push of tag $VERSION"
+          fi
+
+      - name: Delete existing release (if present)
+        if: steps.determine_dry.outputs.dry_run != 'true'
+        run: |
+          gh release delete "${{ steps.get_version.outputs.version }}" --yes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        id: create_release
+        if: steps.determine_dry.outputs.dry_run != 'true'
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: Release ${{ steps.get_version.outputs.version }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Asset
+        if: steps.determine_dry.outputs.dry_run != 'true'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./prism.zip
+          asset_name: prism.zip
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

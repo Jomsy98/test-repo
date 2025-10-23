@@ -1,0 +1,75 @@
+name: Update README with Environment Variables
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'README.md'
+      - '.env'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    # Only run this workflow in forks/other repos, not in the template repository
+    if: github.repository != 'Jomsy98/packwiz-template'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for placeholders and update README
+        id: update_readme
+        run: |
+          # Set default values
+          MODPACK_NAME="Modpack Template"
+          MODPACK_DESCRIPTION="This is a modpack template for PackwizBuilder!"
+          
+          # Check if .env file exists and source it
+          if [ -f .env ]; then
+            echo "Found .env file, loading variables..."
+            # Export variables from .env
+            set -a
+            source .env
+            set +a
+          else
+            echo "No .env file found, using default values"
+          fi
+          
+          # Check if README.md contains placeholders
+          if grep -q "\[Modpack Name\]" README.md || grep -q "\[Modpack Description\]" README.md; then
+            echo "Placeholders found in README.md"
+            echo "has_placeholders=true" >> $GITHUB_OUTPUT
+            
+            # Replace placeholders in README.md
+            sed -i "s/\[Modpack Name\]/${MODPACK_NAME}/g" README.md
+            sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" README.md
+            
+            echo "Replaced placeholders in README.md:"
+            echo "  MODPACK_NAME=${MODPACK_NAME}"
+            echo "  MODPACK_DESCRIPTION=${MODPACK_DESCRIPTION}"
+          else
+            echo "No placeholders found in README.md, nothing to update"
+            echo "has_placeholders=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Commit changes
+        if: steps.update_readme.outputs.has_placeholders == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update README with modpack information from .env"
+            git push
+            echo "README.md updated and committed"
+          fi
