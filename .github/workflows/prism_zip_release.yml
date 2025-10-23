@@ -129,12 +129,14 @@ jobs:
       - name: Zip prism directory
         run: |
           zip -r "${{ steps.zip_name.outputs.zip_filename }}" prism
+          echo "Created zip file:"
+          ls -lh "${{ steps.zip_name.outputs.zip_filename }}"
 
       - name: Upload zip artifact (for dry-run inspection)
         uses: actions/upload-artifact@v4
         with:
           name: prism-zip
-          path: ${{ steps.zip_name.outputs.zip_filename }}
+          path: "${{ steps.zip_name.outputs.zip_filename }}"
 
       - name: Install gh CLI (if needed)
         run: |
@@ -182,8 +184,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./${{ steps.zip_name.outputs.zip_filename }}
-          asset_name: ${{ steps.zip_name.outputs.zip_filename }}
+          asset_path: "./${{ steps.zip_name.outputs.zip_filename }}"
+          asset_name: "${{ steps.zip_name.outputs.zip_filename }}"
           asset_content_type: application/zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
