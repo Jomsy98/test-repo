@@ -1,0 +1,11 @@
+name = "modpack name"
+version = "1.0.0"
+author = "author name"
+description = """modpack description"""
+
+# Minecraft version
+minecraft = "1.21"
+
+# Mod loader
+[neoforge]
+minecraft = "latest"
