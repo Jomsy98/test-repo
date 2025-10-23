@@ -55,9 +55,9 @@ jobs:
             echo "No .env file found, using default values"
           fi
           
-          # Determine zip filename (same logic as prism_zip_release)
+          # Determine zip filename (replace spaces with underscores - same logic as prism_zip_release)
           if [ -n "$MODPACK_NAME" ] && [ "$MODPACK_NAME" != "" ]; then
-            ZIP_FILENAME="${MODPACK_NAME}.zip"
+            ZIP_FILENAME="${MODPACK_NAME// /_}.zip"
           else
             ZIP_FILENAME="Unnamed_Modpack.zip"
           fi
