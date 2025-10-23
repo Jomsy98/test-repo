@@ -40,13 +40,21 @@ jobs:
             echo "No .env file found, using default values"
           fi
           
+          # Extract repository owner and name from GITHUB_REPOSITORY
+          REPO_OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          
           # Replace placeholders in prism/instance.cfg
           sed -i "s/\[Modpack Name\]/${MODPACK_NAME}/g" prism/instance.cfg
           sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" prism/instance.cfg
+          sed -i "s/\[REPO_OWNER\]/${REPO_OWNER}/g" prism/instance.cfg
+          sed -i "s/\[REPO_NAME\]/${REPO_NAME}/g" prism/instance.cfg
           
           echo "Replaced placeholders in prism/instance.cfg:"
           echo "  MODPACK_NAME=${MODPACK_NAME}"
           echo "  MODPACK_DESCRIPTION=${MODPACK_DESCRIPTION}"
+          echo "  REPO_OWNER=${REPO_OWNER}"
+          echo "  REPO_NAME=${REPO_NAME}"
         shell: bash
 
       - name: Determine dry-run mode
@@ -88,15 +96,41 @@ jobs:
           if [ -z "$VERSION" ]; then VERSION="0.0.0"; fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      - name: Determine zip filename
+        id: zip_name
+        run: |
+          # Set default modpack name
+          MODPACK_NAME="Unnamed_Modpack"
+          
+          # Check if .env file exists and source it
+          if [ -f .env ]; then
+            echo "Found .env file, loading variables..."
+            set -a; source .env; set +a
+            # Check if MODPACK_NAME is set and not empty
+            if [ -n "$MODPACK_NAME" ]; then
+              echo "Using MODPACK_NAME from .env: $MODPACK_NAME"
+            else
+              MODPACK_NAME="Unnamed_Modpack"
+            fi
+          else
+            echo "No .env file found, using default name"
+          fi
+          
+          # Create filename (keep spaces in the name)
+          ZIP_FILENAME="${MODPACK_NAME}.zip"
+          echo "zip_filename=${ZIP_FILENAME}" >> $GITHUB_OUTPUT
+          echo "Will create zip file: ${ZIP_FILENAME}"
+        shell: bash
+
       - name: Zip prism directory
         run: |
-          zip -r prism.zip prism
+          zip -r "${{ steps.zip_name.outputs.zip_filename }}" prism
 
-      - name: Upload prism.zip artifact (for dry-run inspection)
+      - name: Upload zip artifact (for dry-run inspection)
         uses: actions/upload-artifact@v4
         with:
           name: prism-zip
-          path: prism.zip
+          path: ${{ steps.zip_name.outputs.zip_filename }}
 
       - name: Install gh CLI (if needed)
         run: |
@@ -144,8 +178,8 @@ jobs:
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./prism.zip
-          asset_name: prism.zip
+          asset_path: ./${{ steps.zip_name.outputs.zip_filename }}
+          asset_name: ${{ steps.zip_name.outputs.zip_filename }}
           asset_content_type: application/zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
