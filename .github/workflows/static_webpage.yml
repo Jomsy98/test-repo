@@ -54,13 +54,21 @@ jobs:
             echo "No .env file found, using default values"
           fi
           
+          # Extract repository owner and name from GITHUB_REPOSITORY
+          REPO_OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          
           # Replace placeholders in index.html
           sed -i "s/\[Modpack Name\]/${MODPACK_NAME}/g" index.html
           sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" index.html
+          sed -i "s/%USER%/${REPO_OWNER}/g" index.html
+          sed -i "s/%REPO%/${REPO_NAME}/g" index.html
           
           echo "Replaced placeholders:"
           echo "  MODPACK_NAME=${MODPACK_NAME}"
           echo "  MODPACK_DESCRIPTION=${MODPACK_DESCRIPTION}"
+          echo "  REPO_OWNER=${REPO_OWNER}"
+          echo "  REPO_NAME=${REPO_NAME}"
         shell: bash
       
       - name: Setup Pages
