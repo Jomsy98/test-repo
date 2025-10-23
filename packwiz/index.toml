@@ -1,0 +1,10 @@
+# modpack name v1.0.0
+# Generated with PackWiz Builder
+
+hash-format = "sha1"
+pack-format = "packwiz:1.1.0"
+
+[index]
+file = "mods/index.toml"
+
+author = "author name"
