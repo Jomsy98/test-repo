@@ -55,7 +55,7 @@ jobs:
             echo "No .env file found, using default values"
           fi
           
-          # Determine zip filename (for download link)
+          # Determine zip filename (same logic as prism_zip_release)
           if [ -n "$MODPACK_NAME" ] && [ "$MODPACK_NAME" != "" ]; then
             ZIP_FILENAME="${MODPACK_NAME}.zip"
           else
@@ -66,12 +66,14 @@ jobs:
           REPO_OWNER="${GITHUB_REPOSITORY%/*}"
           REPO_NAME="${GITHUB_REPOSITORY#*/}"
           
+          # Create download URL
+          DOWNLOAD_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/${ZIP_FILENAME}"
+          
           # Replace placeholders in index.html
-          sed -i "s/\[Modpack Name\]/${MODPACK_NAME}/g" index.html
-          sed -i "s/\[Modpack Description\]/${MODPACK_DESCRIPTION}/g" index.html
-          sed -i "s/%USER%/${REPO_OWNER}/g" index.html
-          sed -i "s/%REPO%/${REPO_NAME}/g" index.html
-          sed -i "s/%ZIP_FILENAME%/${ZIP_FILENAME}/g" index.html
+          sed -i "s|\[Modpack Name\]|${MODPACK_NAME}|g" index.html
+          sed -i "s|\[Modpack Description\]|${MODPACK_DESCRIPTION}|g" index.html
+          sed -i "s|\[DOWNLOAD_URL\]|${DOWNLOAD_URL}|g" index.html
+          sed -i "s|\[ZIP_FILENAME\]|${ZIP_FILENAME}|g" index.html
           
           echo "Replaced placeholders:"
           echo "  MODPACK_NAME=${MODPACK_NAME}"
@@ -79,6 +81,7 @@ jobs:
           echo "  REPO_OWNER=${REPO_OWNER}"
           echo "  REPO_NAME=${REPO_NAME}"
           echo "  ZIP_FILENAME=${ZIP_FILENAME}"
+          echo "  DOWNLOAD_URL=${DOWNLOAD_URL}"
         shell: bash
       
       - name: Setup Pages
