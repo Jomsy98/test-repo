@@ -167,25 +167,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create GitHub Release
-        id: create_release
+      - name: Create GitHub Release and Upload Asset
         if: steps.determine_dry.outputs.dry_run != 'true'
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: Release ${{ steps.get_version.outputs.version }}
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Release Asset
-        if: steps.determine_dry.outputs.dry_run != 'true'
-        uses: actions/upload-release-asset@v1
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: "./${{ steps.zip_name.outputs.zip_filename }}"
-          asset_name: "${{ steps.zip_name.outputs.zip_filename }}"
-          asset_content_type: application/zip
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          ZIP_FILE="${{ steps.zip_name.outputs.zip_filename }}"
+          
+          # Create release and upload the zip file
+          gh release create "$VERSION" \
+            "$ZIP_FILE" \
+            --title "Release $VERSION" \
+            --notes "Release $VERSION"
+          
+          echo "Created release $VERSION with asset: $ZIP_FILE"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
