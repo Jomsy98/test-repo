@@ -7,6 +7,7 @@ on:
       - 'prism/**'
       - 'server-icon.png'
       - '.env'
+      - '.github/workflows/prism_zip_release.yml'
   workflow_dispatch:
     inputs:
       dry_run:
