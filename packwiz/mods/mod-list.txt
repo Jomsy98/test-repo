@@ -1,0 +1,10 @@
+# modpack name - Mod List
+# Total Mods: 1
+
+## CurseForge Mods (1)
+- Crafting on a stick (577850)
+
+## Installation Instructions
+1. Install neoforge for Minecraft 1.21
+2. Install packwiz
+3. Use packwiz to install all mods
