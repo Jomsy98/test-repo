@@ -31,7 +31,7 @@
               <li>Launch the modpack and enjoy!</li>
             </ol>
             <div style="margin-top:12px">
-              <a class="btn" id="downloadBtn" href="#">Download Pack (prism.zip)</a>
+              <a class="btn" id="downloadBtn" href="#">Download Pack</a>
             </div>
           </section>
         </main>
@@ -53,16 +53,18 @@
         // Fill repo info placeholders (replace %USER% and %REPO% at build time if desired)
         const user = '%USER%';
         const repo = '%REPO%';
+        const zipFilename = '%ZIP_FILENAME%';
         const repoSpan = document.getElementById('repoInfo');
         if(repoSpan){
           if(user !== '%USER%' && repo !== '%REPO%') repoSpan.textContent = `${user}/${repo}`;
         }
 
-        // Set download link to the repository latest release asset if repo info is present
+        // Set download link to the repository latest release asset
         const dl = document.getElementById('downloadBtn');
-        dl.href = `https://github.com/${user}/${repo}/releases/latest/download/prism.zip`;
-        
-        // Load CHANGELOG.md from root
+        const filename = zipFilename !== '%ZIP_FILENAME%' ? zipFilename : 'Unnamed_Modpack.zip';
+        dl.href = `https://github.com/${user}/${repo}/releases/latest/download/${encodeURIComponent(filename)}`;
+        dl.textContent = `Download Pack (${filename})`;
+                // Load CHANGELOG.md from root
         async function loadChangelog(){
           const content = document.getElementById('changelogContent');
           try{
