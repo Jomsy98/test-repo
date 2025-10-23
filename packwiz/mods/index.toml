@@ -1,0 +1,7 @@
+# Mods index file
+# 1 mods selected
+
+hash-format = "sha1"
+
+[[files]]
+file = "mods/mod-list.txt"
