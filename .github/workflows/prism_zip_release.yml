@@ -117,12 +117,9 @@ jobs:
             echo "No .env file found, using default name"
           fi
           
-          # Create filename (keep spaces in the name)
-          ZIP_FILENAME="${MODPACK_NAME}.zip"
-          # Use proper quoting and escaping for GitHub Actions output
-          echo "zip_filename<<EOF" >> $GITHUB_OUTPUT
-          echo "${ZIP_FILENAME}" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Create filename (replace spaces with underscores)
+          ZIP_FILENAME="${MODPACK_NAME// /_}.zip"
+          echo "zip_filename=${ZIP_FILENAME}" >> $GITHUB_OUTPUT
           echo "Will create zip file: ${ZIP_FILENAME}"
         shell: bash
 
@@ -136,7 +133,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: prism-zip
-          path: "${{ steps.zip_name.outputs.zip_filename }}"
+          path: ${{ steps.zip_name.outputs.zip_filename }}
 
       - name: Install gh CLI (if needed)
         run: |
@@ -173,13 +170,11 @@ jobs:
           VERSION="${{ steps.get_version.outputs.version }}"
           ZIP_FILE="${{ steps.zip_name.outputs.zip_filename }}"
           
-          # Create release without uploading files
+          # Create release and upload the zip file
           gh release create "$VERSION" \
+            "$ZIP_FILE" \
             --title "Release $VERSION" \
             --notes "Release $VERSION"
-          
-          # Upload the zip file separately with explicit filename
-          gh release upload "$VERSION" "$ZIP_FILE" --clobber
           
           echo "Created release $VERSION with asset: $ZIP_FILE"
         env:
