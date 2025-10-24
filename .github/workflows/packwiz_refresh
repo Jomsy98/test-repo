@@ -2,7 +2,9 @@ name: Packwiz Refresh with Latest Artifact
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   refresh:
