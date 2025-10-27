@@ -1,0 +1,7 @@
+name = "{{MODPACK_NAME}}"
+version = "{{MODPACK_VERSION}}"
+pack-format = "packwiz:1.1.0"
+
+[versions]
+{{MODLOADER}} = "{{MODLOADER_VERSION}}"
+minecraft = "{{MINECRAFT_VERSION}}"

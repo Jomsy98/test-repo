@@ -1,0 +1,13 @@
+{
+    "components": [
+        {
+            "uid": "net.minecraft",
+            "version": "{{MINECRAFT_VERSION}}"
+        },
+        {
+            "uid": "{{MODLOADER_UID}}",
+            "version": "{{MODLOADER_VERSION}}"
+        }
+    ],
+    "formatVersion": 1
+}

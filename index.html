@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{MODPACK_NAME}}</title>
+    <meta name="description" content="{{MODPACK_DESCRIPTION}}" />
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <div class="container">
+      <header class="header">
+        <div class="logo-wrap">
+          <img id="logoImg" alt="modpack logo" src="./server-icon.png" onerror="this.onerror=null;this.src='prism/modpack.png'" />
+        </div>
+        <div>
+          <h1 id="packName">{{MODPACK_NAME}}</h1>
+          <p class="lead">{{MODPACK_DESCRIPTION}}</p>
+        </div>
+      </header>
+
+      <div class="grid">
+        <main>
+          <section class="card install-steps">
+            <h2>How to install</h2>
+            <p class="small">Quick steps to get started with Prism Launcher</p>
+            <ol>
+              <li>Install <a href="https://prismlauncher.org/" style="color:var(--accent);text-decoration:none">Prism Launcher</a> (Windows / macOS / Linux).</li>
+              <li>Right click the "Download Pack" button below and copy the url. Or download the file directly.</li>
+              <li>Open Prism and import the downloaded pack. You can paste the url and prism will download it directly.</li>
+              <li>Launch the modpack and enjoy!</li>
+            </ol>
+            <div style="margin-top:12px">
+              <a class="btn" id="downloadBtn" href="{{DOWNLOAD_URL}}">Download Pack ({{ZIP_FILENAME}})</a>
+            </div>
+          </section>
+        </main>
+
+        <aside>
+          <div id="changelogCard" class="card mods-card-extended">
+            <div id="changelogContent" class="mods-list">
+              <p class="small">Loading...</p>
+            </div>
+            <div style="margin-top:8px"></div>
+          </div>
+        </aside>
+      </div>
+
+    </div>
+
+    <script>
+      (function(){
+        // Load CHANGELOG.md from root
+        async function loadChangelog(){
+          const content = document.getElementById('changelogContent');
+          try{
+            const res = await fetch('./CHANGELOG.md');
+            if(!res.ok) throw new Error(`HTTP ${res.status}`);
+            const text = await res.text();
+            
+            // Simple markdown-to-HTML conversion for changelog
+            const lines = text.split('\n');
+            // Escape HTML special characters to prevent XSS
+            function escapeHtml(str) {
+              return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+            }
+            let html = '';
+            lines.forEach(line => {
+              if(line.startsWith('# ')) {
+                html += `<h2>${escapeHtml(line.substring(2))}</h2>`;
+              } else if(line.startsWith('## ')) {
+                html += `<h3>${escapeHtml(line.substring(3))}</h3>`;
+              } else if(line.startsWith('### ')) {
+                html += `<h4>${escapeHtml(line.substring(4))}</h4>`;
+              } else if(line.trim()) {
+                html += `<p class="small">${escapeHtml(line)}</p>`;
+              }
+            });
+            
+            content.innerHTML = html || '<p class="small">No changelog content available.</p>';
+          }catch(e){
+            content.innerHTML = '<p class="small">Unable to load changelog.</p>';
+            console.error('Failed to load CHANGELOG.md:', e);
+          }
+        }
+
+        loadChangelog();
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,133 @@
+name: Packwiz Refresh
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'packwiz/**'
+      - 'pwbuilder.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Cancel in-progress runs when a new run is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Only run this workflow in forks/other repos, not in the template repository
+    # Skip if this is the initial commit from template
+    if: github.repository != 'Jomsy98/packwiz-template' && !contains(github.event.head_commit.message, 'Initial commit')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Load variables from pwbuilder.json and replace pack.toml placeholders
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse JSON and export variables
+          MODPACK_NAME=$(jq -r '.modpack.name' pwbuilder.json)
+          MODPACK_VERSION=$(jq -r '.modpack.version' pwbuilder.json)
+          MODPACK_DESCRIPTION=$(jq -r '.modpack.description' pwbuilder.json)
+          MINECRAFT_VERSION=$(jq -r '.modpack.minecraft.version' pwbuilder.json)
+          MODLOADER=$(jq -r '.modpack.modLoader.type' pwbuilder.json)
+          MODLOADER_VERSION=$(jq -r '.modpack.modLoader.version' pwbuilder.json)
+          
+          export MODPACK_NAME MODPACK_VERSION MODPACK_DESCRIPTION MINECRAFT_VERSION MODLOADER MODLOADER_VERSION
+          
+          echo "📦 Loaded variables from pwbuilder.json"
+          echo "  MODPACK_NAME: $MODPACK_NAME"
+          echo "  MODPACK_VERSION: $MODPACK_VERSION"
+          echo "  MINECRAFT_VERSION: $MINECRAFT_VERSION"
+          echo "  MODLOADER: $MODLOADER"
+          echo "  MODLOADER_VERSION: $MODLOADER_VERSION"
+          
+          # Function to replace variables in a file
+          replace_vars() {
+            local file="$1"
+            if [ ! -f "$file" ]; then return; fi
+            
+            echo "  📝 Processing: $file"
+            
+            # Find all {{VARIABLE}} patterns and replace them
+            for var_pattern in $(grep -oP '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true); do
+              var_name="${var_pattern:2:-2}"  # Remove {{ and }}
+              var_value="${!var_name}"
+              
+              if [ -n "$var_value" ]; then
+                # Escape special characters for sed (/, &, \, newlines, and other special chars)
+                escaped_value=$(printf '%s\n' "$var_value" | sed -e 's/[\/&]/\\&/g' -e 's/$/\\n/' | tr -d '\n' | sed -e 's/\\n$//')
+                # Replace in file using | as delimiter to avoid conflicts with /
+                sed -i "s|{{${var_name}}}|${escaped_value}|g" "$file"
+                echo "    ✓ {{${var_name}}} = ${var_value}"
+              fi
+            done
+          }
+          
+          # Replace variables in packwiz/pack.toml
+          replace_vars "packwiz/pack.toml"
+          
+          echo "✅ All variables replaced"
+        shell: bash
+
+      - name: Get latest artifact ID
+        id: artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ARTIFACT_ID=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            repos/packwiz/packwiz/actions/artifacts \
+            --jq '.artifacts | map(select(.name == "Linux 64-bit x86")) | sort_by(.created_at) | reverse | .[0].id')
+          echo "artifact_id=$ARTIFACT_ID" >> $GITHUB_OUTPUT
+
+      - name: Download artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            repos/packwiz/packwiz/actions/artifacts/${{ steps.artifact.outputs.artifact_id }}/zip \
+            > packwiz-linux-x86.zip
+          unzip packwiz-linux-x86.zip -d packwiz-bin
+
+      - name: Make packwiz executable
+        run: |
+          chmod +x packwiz-bin/packwiz
+
+      - name: Run packwiz refresh
+        working-directory: packwiz
+        run: |
+          # Run packwiz from inside the packwiz directory so it operates on local files
+          ../packwiz-bin/packwiz refresh
+
+      - name: Commit packwiz changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add the packwiz files
+          git add packwiz/index.toml packwiz/pack.toml
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: refresh packwiz index and pack files"
+            
+            # Pull latest changes before pushing in case other workflows committed
+            git pull --rebase origin main
+            
+            git push
+            echo "Packwiz files updated and committed"
+          fi

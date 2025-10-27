@@ -1,0 +1,131 @@
+name: Update Changelog from PR
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+    branches: ["main"]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+# Cancel in-progress runs when a new run is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  update-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from PR title and update changelog
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          # Extract version from PR title using regex [X.X.X]
+          if [[ "$PR_TITLE" =~ \[([0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "📦 Extracted version: $VERSION"
+          else
+            echo "❌ No version found in PR title. Expected format: [X.X.X] Title"
+            echo "   Example: [1.0.0] Initial update"
+            exit 1
+          fi
+          
+          # Get current date in YYYY-MM-DD format
+          CURRENT_DATE=$(date +%Y-%m-%d)
+          
+          # Check if CHANGELOG.md exists
+          if [ ! -f CHANGELOG.md ]; then
+            echo "❌ CHANGELOG.md not found"
+            exit 1
+          fi
+          
+          # Create temporary file for the new changelog
+          TMP_FILE=$(mktemp)
+          
+          # Flag to track if we're inside the version section to be replaced
+          SKIP_SECTION=false
+          VERSION_EXISTS=false
+          VERSION_ADDED=false
+          
+          # Read CHANGELOG.md line by line
+          while IFS= read -r line || [ -n "$line" ]; do
+            # Check if this line is a version header
+            if [[ "$line" =~ ^##[[:space:]]\[([0-9]+\.[0-9]+\.[0-9]+)\] ]]; then
+              FOUND_VERSION="${BASH_REMATCH[1]}"
+              
+              # If we found the version we're updating
+              if [ "$FOUND_VERSION" = "$VERSION" ]; then
+                VERSION_EXISTS=true
+                SKIP_SECTION=true
+                
+                # Don't write this old version header, we'll add the new one
+                continue
+              else
+                # Different version header - stop skipping if we were
+                if [ "$SKIP_SECTION" = true ]; then
+                  SKIP_SECTION=false
+                fi
+                
+                # If we haven't added our version yet and this is a version header,
+                # add our version before this one (chronological order, newest first)
+                if [ "$VERSION_ADDED" = false ]; then
+                  echo "## [$VERSION] - $CURRENT_DATE" >> "$TMP_FILE"
+                  echo "" >> "$TMP_FILE"
+                  echo "$PR_BODY" >> "$TMP_FILE"
+                  echo "" >> "$TMP_FILE"
+                  VERSION_ADDED=true
+                fi
+              fi
+            fi
+            
+            # Write line to temp file if not skipping
+            if [ "$SKIP_SECTION" = false ]; then
+              echo "$line" >> "$TMP_FILE"
+            fi
+          done < CHANGELOG.md
+          
+          # If version was never added (no other version headers found, or changelog is empty)
+          if [ "$VERSION_ADDED" = false ]; then
+            # Append to the end
+            echo "" >> "$TMP_FILE"
+            echo "## [$VERSION] - $CURRENT_DATE" >> "$TMP_FILE"
+            echo "" >> "$TMP_FILE"
+            echo "$PR_BODY" >> "$TMP_FILE"
+            echo "" >> "$TMP_FILE"
+          fi
+          
+          # Replace original changelog with updated version
+          mv "$TMP_FILE" CHANGELOG.md
+          
+          if [ "$VERSION_EXISTS" = true ]; then
+            echo "✅ Updated existing changelog entry for version $VERSION"
+          else
+            echo "✅ Added new changelog entry for version $VERSION"
+          fi
+        shell: bash
+
+      - name: Commit changelog changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add CHANGELOG.md
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update CHANGELOG.md for version from PR"
+            git push
+            echo "✅ CHANGELOG.md updated and committed to PR"
+          fi

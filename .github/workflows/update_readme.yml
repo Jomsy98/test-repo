@@ -1,0 +1,105 @@
+name: Update README with Environment Variables
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - 'README.md'
+      - 'pwbuilder.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Cancel in-progress runs when a new run is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    # Only run this workflow in forks/other repos, not in the template repository
+    # Skip if this is the initial commit from template
+    if: github.repository != 'Jomsy98/packwiz-template' && !contains(github.event.head_commit.message, 'Initial commit')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for placeholders and update README
+        id: update_readme
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse JSON and export variables
+          MODPACK_NAME=$(jq -r '.modpack.name' pwbuilder.json)
+          MODPACK_VERSION=$(jq -r '.modpack.version' pwbuilder.json)
+          MODPACK_DESCRIPTION=$(jq -r '.modpack.description' pwbuilder.json)
+          MINECRAFT_VERSION=$(jq -r '.modpack.minecraft.version' pwbuilder.json)
+          MODLOADER=$(jq -r '.modpack.modLoader.type' pwbuilder.json)
+          MODLOADER_VERSION=$(jq -r '.modpack.modLoader.version' pwbuilder.json)
+          
+          export MODPACK_NAME MODPACK_VERSION MODPACK_DESCRIPTION MINECRAFT_VERSION MODLOADER MODLOADER_VERSION
+          
+          # Check if README.md contains placeholders
+          if grep -q "{{MODPACK_NAME}}" README.md || grep -q "{{MODPACK_DESCRIPTION}}" README.md; then
+            echo "Placeholders found in README.md"
+            echo "has_placeholders=true" >> $GITHUB_OUTPUT
+            
+            # Function to replace variables in a file
+            replace_vars() {
+              local file="$1"
+              if [ ! -f "$file" ]; then return; fi
+              
+              echo "  📝 Processing: $file"
+              
+              # Find all {{VARIABLE}} patterns and replace them
+              for var_pattern in $(grep -oP '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true); do
+                var_name="${var_pattern:2:-2}"  # Remove {{ and }}
+                var_value="${!var_name}"
+                
+                if [ -n "$var_value" ]; then
+                  # Escape special characters for sed (/, &, \, newlines, and other special chars)
+                  escaped_value=$(printf '%s\n' "$var_value" | sed -e 's/[\/&]/\\&/g' -e 's/$/\\n/' | tr -d '\n' | sed -e 's/\\n$//')
+                  # Replace in file using | as delimiter to avoid conflicts with /
+                  sed -i "s|{{${var_name}}}|${escaped_value}|g" "$file"
+                  echo "    ✓ {{${var_name}}} = ${var_value}"
+                fi
+              done
+            }
+            
+            # Replace variables in README.md
+            replace_vars "README.md"
+            
+            echo "✅ All variables replaced"
+          else
+            echo "No placeholders found in README.md, nothing to update"
+            echo "has_placeholders=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Commit changes
+        if: steps.update_readme.outputs.has_placeholders == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: update README with modpack information from pwbuilder.json"
+            
+            # Pull latest changes before pushing in case other workflows committed
+            git pull --rebase origin main
+            
+            git push
+            echo "README.md updated and committed"
+          fi

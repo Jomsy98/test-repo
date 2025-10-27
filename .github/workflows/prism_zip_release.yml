@@ -1,0 +1,226 @@
+name: Build and Release Prism Zip
+
+on:
+  push:
+    branches: ["main", "develop"]
+    paths:
+      - 'prism/**'
+      - 'server-icon.png'
+      - 'pwbuilder.json'
+      - '.github/workflows/prism_zip_release.yml'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'If true, do not push tags or create/delete releases (testing)'
+        required: false
+        default: 'true'
+
+# Set permissions required for creating releases and pushing tags
+permissions:
+  contents: write
+
+# Cancel in-progress runs when a new run is triggered
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-release:
+    # Skip if this is the initial commit from template
+    if: ${{ !contains(github.event.head_commit.message, 'Initial commit') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Replace placeholders in prism/instance.cfg and prism/mmc-pack.json
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse JSON and export variables
+          MODPACK_NAME=$(jq -r '.modpack.name' pwbuilder.json)
+          MODPACK_VERSION=$(jq -r '.modpack.version' pwbuilder.json)
+          MODPACK_DESCRIPTION=$(jq -r '.modpack.description' pwbuilder.json)
+          MINECRAFT_VERSION=$(jq -r '.modpack.minecraft.version' pwbuilder.json)
+          MODLOADER=$(jq -r '.modpack.modLoader.type' pwbuilder.json)
+          MODLOADER_VERSION=$(jq -r '.modpack.modLoader.version' pwbuilder.json)
+          
+          export MODPACK_NAME MODPACK_VERSION MODPACK_DESCRIPTION MINECRAFT_VERSION MODLOADER MODLOADER_VERSION
+          
+          # Set computed variables
+          REPO_OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          
+          # Map MODLOADER to MODLOADER_UID
+          case "${MODLOADER,,}" in
+            forge)
+              MODLOADER_UID="net.minecraftforge"
+              ;;
+            fabric)
+              MODLOADER_UID="net.fabricmc.fabric-loader"
+              ;;
+            neoforged|neoforge)
+              MODLOADER_UID="net.neoforged"
+              ;;
+            *)
+              echo "❌ Error: Unsupported MODLOADER value: '${MODLOADER}'"
+              echo "   Supported values: forge, fabric, neoforge"
+              exit 1
+              ;;
+          esac
+          
+          export REPO_OWNER REPO_NAME MODLOADER_UID
+          
+          # Function to replace variables in a file
+          replace_vars() {
+            local file="$1"
+            if [ ! -f "$file" ]; then return; fi
+            
+            echo "  📝 Processing: $file"
+            
+            # Find all {{VARIABLE}} patterns and replace them
+            for var_pattern in $(grep -oP '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true); do
+              var_name="${var_pattern:2:-2}"  # Remove {{ and }}
+              var_value="${!var_name}"
+              
+              if [ -n "$var_value" ]; then
+                # Escape special characters for sed (/, &, \, newlines, and other special chars)
+                escaped_value=$(printf '%s\n' "$var_value" | sed -e 's/[\/&]/\\&/g' -e 's/$/\\n/' | tr -d '\n' | sed -e 's/\\n$//')
+                # Replace in file using | as delimiter to avoid conflicts with /
+                sed -i "s|{{${var_name}}}|${escaped_value}|g" "$file"
+                echo "    ✓ {{${var_name}}} = ${var_value}"
+              fi
+            done
+          }
+          
+          # Replace variables in prism files
+          replace_vars "prism/instance.cfg"
+          replace_vars "prism/mmc-pack.json"
+          
+          echo "✅ All variables replaced"
+        shell: bash
+
+      - name: Determine dry-run mode
+        id: determine_dry
+        run: |
+          # If manually triggered, allow the workflow input to control dry run. Otherwise, treat pushes to 'develop' as dry runs.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DRY_IN="${{ github.event.inputs.dry_run }}"
+            if [ -z "$DRY_IN" ]; then DRY_IN='false'; fi
+            DRY_RUN="$DRY_IN"
+          else
+            if [ "${{ github.ref }}" = "refs/heads/develop" ]; then
+              DRY_RUN='true'
+            else
+              DRY_RUN='false'
+            fi
+          fi
+          echo "DRY_RUN=$DRY_RUN" >> $GITHUB_ENV
+          echo "dry_run=$DRY_RUN" >> $GITHUB_OUTPUT
+
+      - name: Download packwiz installer bootstrap
+        run: |
+          mkdir -p prism/minecraft
+          curl -L -o prism/minecraft/packwiz-installer-bootstrap.jar https://github.com/packwiz/packwiz-installer-bootstrap/releases/latest/download/packwiz-installer-bootstrap.jar
+
+      - name: Copy logo into prism as modpack.png
+        run: |
+          if [ -f ./server-icon.png ]; then
+            cp ./server-icon.png ./prism/modpack.png
+            echo "Copied server-icon.png -> prism/modpack.png"
+          else
+            echo "server-icon.png not found in repo root; skipping copy"
+          fi
+
+      - name: Get version from pwbuilder.json
+        id: get_version
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse version from JSON, default to 0.0.0 if not found
+          VERSION=$(jq -r '.modpack.version // "0.0.0"' pwbuilder.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using version: $VERSION"
+
+      - name: Determine zip filename
+        id: zip_name
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse modpack name from JSON
+          MODPACK_NAME=$(jq -r '.modpack.name' pwbuilder.json)
+          
+          # Create filename (replace spaces with underscores)
+          ZIP_FILENAME="${MODPACK_NAME// /_}.zip"
+          echo "zip_filename=${ZIP_FILENAME}" >> $GITHUB_OUTPUT
+          echo "Will create zip file: ${ZIP_FILENAME}"
+        shell: bash
+
+      - name: Zip prism directory
+        run: |
+          zip -r "${{ steps.zip_name.outputs.zip_filename }}" prism
+          echo "Created zip file:"
+          ls -lh "${{ steps.zip_name.outputs.zip_filename }}"
+
+      - name: Upload zip artifact (for dry-run inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: prism-zip
+          path: ${{ steps.zip_name.outputs.zip_filename }}
+
+      - name: Install gh CLI (if needed)
+        run: |
+          if ! command -v gh >/dev/null 2>&1; then
+            curl -fsSL https://cli.github.com/install.sh | sudo bash
+          else
+            echo "gh already installed"
+          fi
+
+      - name: Create or update tag for version
+        run: |
+          git fetch --tags
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          VERSION=${{ steps.get_version.outputs.version }}
+          echo "Creating/updating tag $VERSION"
+          git tag -f "$VERSION"
+          if [ "$DRY_RUN" != 'true' ]; then
+            git push -f origin "refs/tags/$VERSION"
+          else
+            echo "Dry run enabled; skipping git push of tag $VERSION"
+          fi
+
+      - name: Delete existing release (if present)
+        if: steps.determine_dry.outputs.dry_run != 'true'
+        run: |
+          gh release delete "${{ steps.get_version.outputs.version }}" --yes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release and Upload Asset
+        if: steps.determine_dry.outputs.dry_run != 'true'
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          ZIP_FILE="${{ steps.zip_name.outputs.zip_filename }}"
+          
+          # Create release and upload the zip file
+          gh release create "$VERSION" \
+            "$ZIP_FILE" \
+            --title "Release $VERSION" \
+            --notes "Release $VERSION"
+          
+          echo "Created release $VERSION with asset: $ZIP_FILE"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

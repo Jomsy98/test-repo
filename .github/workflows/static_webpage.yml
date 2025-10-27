@@ -1,0 +1,109 @@
+# Simple workflow for deploying static content to GitHub Pages
+name: Deploy static content to Pages
+
+on:
+  # Runs on pushes targeting the default branch
+  push:
+    branches: ["main"]
+    paths:
+      - 'index.html'
+      - 'styles.css'
+      - 'server-icon.png'
+      - 'packwiz/pack.toml'
+      - 'CHANGELOG.md'
+      - 'pwbuilder.json'
+      - '.github/workflows/static_webpage.yml'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  # Single deploy job since we're just deploying
+  deploy:
+    # Skip if this is the initial commit from template
+    if: ${{ !contains(github.event.head_commit.message, 'Initial commit') }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Replace template variables
+        run: |
+          # Check if pwbuilder.json exists
+          if [ ! -f pwbuilder.json ]; then
+            echo "❌ pwbuilder.json not found"
+            exit 1
+          fi
+          
+          # Parse JSON and export variables
+          MODPACK_NAME=$(jq -r '.modpack.name' pwbuilder.json)
+          MODPACK_VERSION=$(jq -r '.modpack.version' pwbuilder.json)
+          MODPACK_DESCRIPTION=$(jq -r '.modpack.description' pwbuilder.json)
+          MINECRAFT_VERSION=$(jq -r '.modpack.minecraft.version' pwbuilder.json)
+          MODLOADER=$(jq -r '.modpack.modLoader.type' pwbuilder.json)
+          MODLOADER_VERSION=$(jq -r '.modpack.modLoader.version' pwbuilder.json)
+          
+          export MODPACK_NAME MODPACK_VERSION MODPACK_DESCRIPTION MINECRAFT_VERSION MODLOADER MODLOADER_VERSION
+          
+          # Set computed variables
+          REPO_OWNER="${GITHUB_REPOSITORY%/*}"
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          ZIP_FILENAME="${MODPACK_NAME// /_}.zip"
+          DOWNLOAD_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/${ZIP_FILENAME}"
+          
+          export REPO_OWNER REPO_NAME ZIP_FILENAME DOWNLOAD_URL
+          
+          # Function to replace variables in a file
+          replace_vars() {
+            local file="$1"
+            if [ ! -f "$file" ]; then return; fi
+            
+            echo "  📝 Processing: $file"
+            
+            # Find all {{VARIABLE}} patterns and replace them
+            for var_pattern in $(grep -oP '\{\{[A-Z_]+\}\}' "$file" 2>/dev/null | sort -u || true); do
+              var_name="${var_pattern:2:-2}"  # Remove {{ and }}
+              var_value="${!var_name}"
+              
+              if [ -n "$var_value" ]; then
+                # Escape special characters for sed (/, &, \, newlines, and other special chars)
+                escaped_value=$(printf '%s\n' "$var_value" | sed -e 's/[\/&]/\\&/g' -e 's/$/\\n/' | tr -d '\n' | sed -e 's/\\n$//')
+                # Replace in file using | as delimiter to avoid conflicts with /
+                sed -i "s|{{${var_name}}}|${escaped_value}|g" "$file"
+                echo "    ✓ {{${var_name}}} = ${var_value}"
+              fi
+            done
+          }
+          
+          # Replace variables in all template files
+          replace_vars "index.html"
+          replace_vars "README.md"
+          
+          echo "✅ All variables replaced"
+        shell: bash
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          # Upload entire repository root which contains all the files
+          path: '.'
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
