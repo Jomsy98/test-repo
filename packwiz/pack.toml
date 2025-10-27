@@ -1,7 +1,12 @@
-name = "{{MODPACK_NAME}}"
-version = "{{MODPACK_VERSION}}"
+name = "My Packwiz Modpack"
+version = "1.0.0"
 pack-format = "packwiz:1.1.0"
 
+[index]
+file = "index.toml"
+hash-format = "sha256"
+hash = "c535447d68a1e8180519f56765f6c382b2b97f93cd5200cda4cb18b690e2ef2f"
+
 [versions]
-{{MODLOADER}} = "{{MODLOADER_VERSION}}"
-minecraft = "{{MINECRAFT_VERSION}}"
+fabric = "0.17.3"
+minecraft = "1.21.5"
